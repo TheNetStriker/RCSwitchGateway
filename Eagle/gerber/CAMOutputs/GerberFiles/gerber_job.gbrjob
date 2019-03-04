@@ -1,0 +1,24 @@
+{
+    "Header": {
+        "Comment": "All values are metric (mm)",
+        "CreationDate": "2019-01-24T20:18:11Z",
+        "GenerationSoftware": {
+            "Application": "EAGLE",
+            "Vendor": "Autodesk",
+            "Version": "9.3.0"
+        },
+        "Part": "Single"
+    },
+    "Overall": {
+        "BoardThickness": 1.57,
+        "LayerNumber": 2,
+        "Name": {
+            "ProjectId": "Feather_RCSwitch"
+        },
+        "Owner": "David Masshardt <david@masshardt.ch>",
+        "Size": {
+            "X": 50.8,
+            "Y": 22.86
+        }
+    }
+}
