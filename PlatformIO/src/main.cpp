@@ -1,3 +1,4 @@
+#include "Arduino.h"
 #include "RCSwitch.h"
 #include "Defines.h"
 #include <WiFi.h>
@@ -32,46 +33,7 @@ class CodeQueueItem
 const unsigned int maxQueueCount = 30;
 QueueList <CodeQueueItem> queue;
 
-const bool debug = false;
-
-void setup() {
-  Serial.begin(115200);
-
-  mySwitch.enableReceive(receivePin);
-  mySwitch.enableTransmit(transmitPin);
-  mySwitch.setProtocol(2);
-  mySwitch.setRepeatTransmit(5);
-
-  WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-  Serial.println("");
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (WiFi.status() == WL_CONNECT_FAILED) {
-      delay(5000);
-      Serial.println("");
-      Serial.println("Connect failed");
-      WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-      Serial.print(".");
-    }
-  }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WLAN_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  if (MDNS.begin(HOSTNAME)) {
-    Serial.println("MDNS responder started");
-  }
-
-  client.begin(MQTT_BROKER_IP, net);
-  client.onMessage(messageReceived);
-
-  connectMqtt();
-}
+const bool debug = true;
 
 void connectMqtt() {
   Serial.print("checking wifi...");
@@ -166,6 +128,45 @@ void messageReceived(String &topic, String &payload) {
     if (debug)
       Serial.println("send added to queue, code: " + String(code) + " codeLength: " + String(codeLength) + " protocol: " + String(protocol) + " repeatTransmit: " + String(repeatTransmit));
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  mySwitch.enableReceive(receivePin);
+  mySwitch.enableTransmit(transmitPin);
+  mySwitch.setProtocol(2);
+  mySwitch.setRepeatTransmit(5);
+
+  WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
+  Serial.println("");
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (WiFi.status() == WL_CONNECT_FAILED) {
+      delay(5000);
+      Serial.println("");
+      Serial.println("Connect failed");
+      WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
+      Serial.print(".");
+    }
+  }
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WLAN_SSID);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  if (MDNS.begin(HOSTNAME)) {
+    Serial.println("MDNS responder started");
+  }
+
+  client.begin(MQTT_BROKER_IP, net);
+  client.onMessage(messageReceived);
+
+  connectMqtt();
 }
 
 void loop() {
