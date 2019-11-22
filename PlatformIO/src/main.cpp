@@ -138,7 +138,10 @@ void setup() {
   mySwitch.setProtocol(2);
   mySwitch.setRepeatTransmit(5);
 
+  WiFi.disconnect(true, true);
   WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
+  Serial.print("Connecting to ");
+  Serial.println(WLAN_SSID);
   Serial.println("");
 
   // Wait for connection
