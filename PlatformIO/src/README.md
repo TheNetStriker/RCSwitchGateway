@@ -1,15 +1,9 @@
 # RCSwitchGateway
 ## Description
-This program uses a modified version of the [rc-switch library](https://github.com/sui77/rc-switch) to control 433 MHZ based switches using MQTT commands over Wifi. It runs on [ESP32](https://www.espressif.com/en/products/hardware/esp32/overview) microcontrollers. (Currently only tested with Adafruit Huzzah32) This program can also detect 433 MHZ signals and send them back via MQTT. Currently it only supports sending **Type A** signals and can also receive commands from e.g. König SAS-SA200 and SAS-SA2002 smoke detectors. Please look at the [RC Switch Wiki](https://github.com/sui77/rc-switch/wiki/Add_New_Remote_Part_1) on how to implement more signals.
+This program uses a modified version of the [rc-switch library](https://github.com/sui77/rc-switch) to control 433 MHZ based switches using MQTT commands over Wifi. It runs on [ESP32](https://www.espressif.com/en/products/hardware/esp32/overview) microcontrollers. (Currently only tested with Adafruit Huzzah32) This program can also detect 433 MHZ signals and send them back via MQTT. Currently it only supports sending **Type A** signals and can also receive commands from e.g. Kï¿½nig SAS-SA200 and SAS-SA2002 smoke detectors. Please look at the [RC Switch Wiki](https://github.com/sui77/rc-switch/wiki/Add_New_Remote_Part_1) on how to implement more signals.
 ## Installation
-- Install the ESP32 on the Arduino IDE as described [here](https://randomnerdtutorials.com/installing-the-esp32-board-in-arduino-ide-windows-instructions/).
-- Clone the project and create an **Defines.h** file containing the following information:
-```cpp
-#define WLAN_SSID "MYSSID"
-#define WLAN_PASSWORD "MYPASSWORD"
-#define MQTT_BROKER_IP "MYIP"
-#define HOSTNAME "MYHOSTNAME"
-```
+- This Project uses PlatformIO. Install [Visual Studio Code](https://code.visualstudio.com) and the [PlatformIO](https://platformio.org/platformio-ide) addon.
+- After the image is uploaded to the ESP32 it can be configured using a web interface. If no WLAN is configured the device will automatically start the web interface. If a WLAN is already configured press the reset button within 10 seconds after powering up the device to start the web interface. In the web interface the MQTT server and the hostname can also be configured.
 ## Hardware
 In the **Eagle** folder you can find Eagle and Gerber files for a feather board to connect a MX-05V receiver and an FS1000A sender to the Adafruit Huzzah32.
 ## MQTT commands and events

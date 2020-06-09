@@ -1,24 +1,57 @@
 #include "Arduino.h"
 #include "RCSwitch.h"
-#include "Defines.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <MQTT.h>
 #include <ESPmDNS.h>
 #include <QueueList.h>
+#include <WiFiManager.h>
 #include <ArduinoJson.h>
+#include <Ticker.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
-WiFiClient net;
+#define ESP_DRD_USE_EEPROM false
+#define ESP_DRD_USE_SPIFFS true
+#define DOUBLERESETDETECTOR_DEBUG true
+
+#include <ESP_DoubleResetDetector.h>
+
+// Number of seconds after reset during which a 
+// subseqent reset will be considered a double reset.
+#define DRD_TIMEOUT 10
+
+// RTC Memory Address for the DoubleResetDetector to use
+#define DRD_ADDRESS 0
+
+DoubleResetDetector* drd;
+
+WiFiClient wifiClient;
 MQTTClient client;
 RCSwitch mySwitch = RCSwitch();
+
+WiFiManager wifiManager;
+Ticker ticker;
+
+char hostname[40] = "rcswitch01";
+char mqtt_server[40];
+char mqtt_port[6] = "1883";
+
+const char* HOSTNAME_ID = "hostname";
+const char* MQTT_SERVER_ID = "mqtt_server";
+const char* MQTT_PORT_ID = "mqtt_port";
+
+WiFiManagerParameter custom_hostname(HOSTNAME_ID, "Hostname", hostname, 40);
+WiFiManagerParameter custom_mqtt_server(MQTT_SERVER_ID, "MQTT server", mqtt_server, 40);
+WiFiManagerParameter custom_mqtt_port(MQTT_PORT_ID, "MQTT port", mqtt_port, 6);
 
 int receivePin = 15;
 int transmitPin = 32;
 
-const String sendTypeATopic = String("/") + HOSTNAME + String("/sender/sendtypea");
-const String sendTopic = String("/") + HOSTNAME + "/sender/send";
-const String queueLengthTopic = String("/") + HOSTNAME + "/queue/length";
-const String codeEventTopic = String("/") + HOSTNAME + "/events/codereceived";
+String sendTypeATopic;
+String sendTopic;
+String queueLengthTopic;
+String codeEventTopic;
 
 class CodeQueueItem
 {
@@ -43,7 +76,7 @@ void connectMqtt() {
   }
 
   Serial.print("\nconnecting mqtt...");
-  while (!client.connect(HOSTNAME)) {
+  while (!client.connect(hostname)) {
     int errorCode = client.lastError();
     Serial.print(" " + String(errorCode) + " ");
     delay(1000);
@@ -130,46 +163,157 @@ void messageReceived(String &topic, String &payload) {
   }
 }
 
+void blink()
+{
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+}
+
+void saveParamsCallback () {
+  Serial.println("saveParamsCallback");
+
+  strcpy(hostname, custom_hostname.getValue());
+  strcpy(mqtt_server, custom_mqtt_server.getValue());
+  strcpy(mqtt_port, custom_mqtt_port.getValue());
+
+  //save the custom parameters to FS
+  Serial.println("saving config");
+
+  DynamicJsonDocument doc(1024);
+
+  doc[HOSTNAME_ID] = hostname;
+  doc[MQTT_SERVER_ID] = mqtt_server;
+  doc[MQTT_PORT_ID] = mqtt_port;
+
+  File configFile = SPIFFS.open("/config.json", "w");
+  if (!configFile) {
+    Serial.println("failed to open config file for writing");
+    return;
+  }
+
+  serializeJson(doc, Serial);
+  serializeJson(doc, configFile);
+
+  configFile.close();
+}
+
+void readConfig() {
+  if (SPIFFS.exists("/config.json")) {
+    //file exists, reading and loading
+    Serial.println("reading config file");
+    File configFile = SPIFFS.open("/config.json", "r");
+    if (configFile) {
+      Serial.println("opened config file");
+      size_t size = configFile.size();
+      // Allocate a buffer to store contents of the file.
+      std::unique_ptr<char[]> buf(new char[size]);
+
+      configFile.readBytes(buf.get(), size);
+      DynamicJsonDocument doc(size);
+      auto error = deserializeJson(doc, buf.get());
+
+      if (error) {
+          Serial.print(F("deserializeJson() failed with code "));
+          Serial.println(error.c_str());
+          return;
+      }
+      
+      serializeJson(doc, Serial);
+
+      Serial.println("\nparsed json");
+
+      if (doc.containsKey(HOSTNAME_ID) && doc[HOSTNAME_ID] != "") {
+        strcpy(hostname, doc[HOSTNAME_ID]);
+        custom_hostname.setValue(hostname, 40);
+      }
+
+      if (doc.containsKey(MQTT_SERVER_ID) && doc[MQTT_SERVER_ID] != "") {
+        strcpy(mqtt_server, doc[MQTT_SERVER_ID]);
+        custom_mqtt_server.setValue(mqtt_server, 40);
+      }
+
+      if (doc.containsKey(MQTT_PORT_ID) && doc[MQTT_PORT_ID] != "") {
+        strcpy(mqtt_port, doc[MQTT_PORT_ID]);
+        custom_mqtt_port.setValue(mqtt_port, 6);
+      }
+
+      configFile.close();
+
+      sendTypeATopic = String("/") + hostname + String("/sender/sendtypea");
+      sendTopic = String("/") + hostname + "/sender/send";
+      queueLengthTopic = String("/") + hostname + "/queue/length";
+      codeEventTopic = String("/") + hostname + "/events/codereceived";
+    }
+  }
+}
+
+bool initSPIFFS() {
+  Serial.println("mounting FS...");
+
+  if (!SPIFFS.begin()) {
+    Serial.println("Formatting FS...");
+    SPIFFS.format();
+
+    if (!SPIFFS.begin()) {
+      return false;
+    }
+  }
+
+  Serial.println("mounted file system");
+  return true;
+}
+
 void setup() {
   Serial.begin(115200);
 
-  mySwitch.enableReceive(receivePin);
-  mySwitch.enableTransmit(transmitPin);
-  mySwitch.setProtocol(2);
-  mySwitch.setRepeatTransmit(5);
+  delay(1000);
 
-  WiFi.disconnect(true, true);
-  WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-  Serial.print("Connecting to ");
-  Serial.println(WLAN_SSID);
-  Serial.println("");
+  pinMode(LED_BUILTIN, OUTPUT);
 
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (WiFi.status() == WL_CONNECT_FAILED) {
-      delay(5000);
-      Serial.println("");
-      Serial.println("Connect failed");
-      WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-      Serial.print(".");
+  if (initSPIFFS()) {
+    readConfig();
+
+    drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
+
+    if (drd->detectDoubleReset()) {
+      Serial.println("Double Reset Detected");
+
+      digitalWrite(LED_BUILTIN, HIGH);
+      ticker.attach(0.5, blink);
+
+      wifiManager.addParameter(&custom_hostname);
+      wifiManager.addParameter(&custom_mqtt_server);
+      wifiManager.addParameter(&custom_mqtt_port);
+
+      wifiManager.setSaveParamsCallback(saveParamsCallback);
+      wifiManager.startConfigPortal(hostname);
+
+      ticker.detach();
+      digitalWrite(LED_BUILTIN, LOW);
+      ESP.restart();
+    } else {
+      mySwitch.enableReceive(receivePin);
+      mySwitch.enableTransmit(transmitPin);
+      mySwitch.setProtocol(2);
+      mySwitch.setRepeatTransmit(5);
+
+      digitalWrite(LED_BUILTIN, HIGH);
+      ticker.attach(0.5, blink);
+
+      if (wifiManager.autoConnect(hostname)) {
+        ticker.detach();
+        digitalWrite(LED_BUILTIN, LOW);
+
+        if (MDNS.begin(hostname)) {
+          Serial.println("MDNS responder started");
+        }
+
+        client.begin(mqtt_server, String(mqtt_port).toInt(), wifiClient);
+        client.onMessage(messageReceived);
+
+        connectMqtt();
+      }
     }
   }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WLAN_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  if (MDNS.begin(HOSTNAME)) {
-    Serial.println("MDNS responder started");
-  }
-
-  client.begin(MQTT_BROKER_IP, net);
-  client.onMessage(messageReceived);
-
-  connectMqtt();
 }
 
 void loop() {
@@ -217,4 +361,6 @@ void loop() {
     Serial.println("MQTT disconnected, error code: " + String(errorCode));
     connectMqtt();
   }
+
+  drd->loop();
 }
