@@ -2,7 +2,7 @@
 #include "RCSwitch.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include <MQTT.h>
+#include <PubSubClient.h>
 #include <ESPmDNS.h>
 #include <QueueList.h>
 #include <WiFiManager.h>
@@ -27,7 +27,7 @@
 DoubleResetDetector* drd;
 
 WiFiClient wifiClient;
-MQTTClient client;
+PubSubClient mqttClient(wifiClient);
 RCSwitch mySwitch = RCSwitch();
 
 WiFiManager wifiManager;
@@ -68,28 +68,102 @@ QueueList <CodeQueueItem> queue;
 
 const bool debug = true;
 
-void connectMqtt() {
-  Serial.print("checking wifi...");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(1000);
-  }
-
-  Serial.print("\nconnecting mqtt...");
-  while (!client.connect(hostname)) {
-    int errorCode = client.lastError();
-    Serial.print(" " + String(errorCode) + " ");
-    delay(1000);
-  }
-
-  Serial.println("\nconnected!");
-
-  client.subscribe(sendTypeATopic);
-  client.subscribe(sendTopic);
+void blink()
+{
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 }
 
-void messageReceived(String &topic, String &payload) {
-  Serial.println("incoming: " + topic + " - " + payload);
+bool checkAndConnectMqtt() {
+  if (!mqttClient.connected()) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    ticker.attach(1, blink);
+        
+    if (strlen(mqtt_server) != 0) {
+      Serial.println("MQTT connecting...");
+
+      mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
+
+      while (!mqttClient.connect(hostname)) {
+        int errorCode = mqttClient.state();
+        Serial.println("MQTT connect error: " + String(errorCode) + " ");
+
+        ticker.detach();
+        return false;
+      }
+
+      mqttClient.subscribe(sendTypeATopic.c_str());
+      mqttClient.subscribe(sendTopic.c_str());
+
+      Serial.println("MQTT connected!");
+
+      ticker.detach();
+      digitalWrite(LED_BUILTIN, LOW);
+    }
+  }
+
+  return true;
+}
+
+bool autoConnectWifi() {
+  digitalWrite(LED_BUILTIN, LOW);
+  ticker.attach(0.5, blink);
+
+  bool success = wifiManager.autoConnect(hostname);
+
+  if (success) {
+      if (MDNS.begin(hostname)) {
+        Serial.println("MDNS responder started: " + String(hostname));
+      }
+  }
+
+  ticker.detach();
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  return success;
+}
+
+void checkAndConnectWifi() {
+  if (WiFi.status() != WL_CONNECTED) {
+    digitalWrite(LED_BUILTIN, LOW);
+    ticker.attach(0.5, blink);
+    
+    WiFi.begin();
+    Serial.print("Connecting to ");
+    Serial.print(wifiManager.getWiFiSSID());
+    Serial.println(" ...");
+
+    int i = 0;
+    while (WiFi.status() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
+      delay(1000);
+      Serial.print(++i); Serial.print(' ');
+
+      if (WiFi.status() == WL_CONNECT_FAILED) {
+        Serial.println("");
+        Serial.println("Connect failed");
+        delay(5000);
+        WiFi.begin();
+        Serial.print(".");
+      }
+    }
+
+    Serial.println('\n');
+    Serial.println("Connection established!");  
+    Serial.print("IP address:\t");
+    Serial.println(WiFi.localIP());
+
+    if (MDNS.begin(hostname)) {
+      Serial.println("MDNS responder started: " + String(hostname));
+    }
+
+    ticker.detach();
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+}
+
+void messageReceived(char* topic, byte* payload, unsigned int length) {
+  String topicString = topic;
+
+  Serial.println("incoming message: " + topicString);
 
   if (queue.count() > maxQueueCount) {
     if (debug)
@@ -98,8 +172,12 @@ void messageReceived(String &topic, String &payload) {
   }
 
   DynamicJsonDocument doc(1024);
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, payload, length);
   JsonObject json = doc.as<JsonObject>();
+
+  Serial.print("json: ");
+  serializeJson(doc, Serial);
+  Serial.println("");
   
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
@@ -107,7 +185,7 @@ void messageReceived(String &topic, String &payload) {
     return;
   }
 
-  if (topic == sendTypeATopic) {
+  if (topicString == sendTypeATopic) {
     //example request: {"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}
 
     if (!json.containsKey("group") || !json.containsKey("device") || !json.containsKey("repeatTransmit") || !json.containsKey("repeatTransmit")) {
@@ -136,7 +214,7 @@ void messageReceived(String &topic, String &payload) {
 
     if (debug)
       Serial.println("sendtypea added to queue, group: " + group + " device: " + device + " repeatTransmit: " + String(repeatTransmit) + " switch: " + switchOnOff);
-  } else if (topic == sendTopic) {
+  } else if (topicString == sendTopic) {
     //example request: {"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }
 
     if (!json.containsKey("code") || !json.containsKey("codeLength") || !json.containsKey("protocol") || !json.containsKey("repeatTransmit")) {
@@ -161,11 +239,6 @@ void messageReceived(String &topic, String &payload) {
     if (debug)
       Serial.println("send added to queue, code: " + String(code) + " codeLength: " + String(codeLength) + " protocol: " + String(protocol) + " repeatTransmit: " + String(repeatTransmit));
   }
-}
-
-void blink()
-{
-  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 }
 
 void saveParamsCallback () {
@@ -269,10 +342,18 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
 
+  mqttClient.setCallback(messageReceived);
+
   if (initSPIFFS()) {
     readConfig();
 
     drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
+
+    wifiManager.addParameter(&custom_hostname);
+    wifiManager.addParameter(&custom_mqtt_server);
+    wifiManager.addParameter(&custom_mqtt_port);
+
+    wifiManager.setSaveParamsCallback(saveParamsCallback);
 
     if (drd->detectDoubleReset()) {
       Serial.println("Double Reset Detected");
@@ -280,11 +361,6 @@ void setup() {
       digitalWrite(LED_BUILTIN, HIGH);
       ticker.attach(0.5, blink);
 
-      wifiManager.addParameter(&custom_hostname);
-      wifiManager.addParameter(&custom_mqtt_server);
-      wifiManager.addParameter(&custom_mqtt_port);
-
-      wifiManager.setSaveParamsCallback(saveParamsCallback);
       wifiManager.startConfigPortal(hostname);
 
       ticker.detach();
@@ -299,7 +375,7 @@ void setup() {
       digitalWrite(LED_BUILTIN, HIGH);
       ticker.attach(0.5, blink);
 
-      if (wifiManager.autoConnect(hostname)) {
+      if (autoConnectWifi()) {
         ticker.detach();
         digitalWrite(LED_BUILTIN, LOW);
 
@@ -307,23 +383,24 @@ void setup() {
           Serial.println("MDNS responder started");
         }
 
-        client.begin(mqtt_server, String(mqtt_port).toInt(), wifiClient);
-        client.onMessage(messageReceived);
-
-        connectMqtt();
+        readConfig(); // Read config again in case something changed in the portal.
+        checkAndConnectMqtt();
       }
     }
   }
 }
 
 void loop() {
+  checkAndConnectWifi();
+  checkAndConnectMqtt();
+
   if (mySwitch.available()) {
     unsigned long value = mySwitch.getReceivedValue();
     if (value == 0) {
       if (debug)
         Serial.println("Unknown encoding");
     } else {
-      client.publish(codeEventTopic, String(value));
+      mqttClient.publish(codeEventTopic.c_str(), String(value).c_str());
       if (debug) {
         Serial.print("code received ");
         Serial.println(value);
@@ -332,9 +409,7 @@ void loop() {
     mySwitch.resetAvailable();
   }
 
-  if (queue.isEmpty()) {
-    delay(10);  // <- fixes some issues with WiFi stability
-  } else {
+  if (!queue.isEmpty()) {
     CodeQueueItem item = queue.pop();
 
     if (debug)
@@ -348,19 +423,12 @@ void loop() {
       Serial.println("sent code: " + String(item.code) + " length: " + String(item.length) + " protocol: " + String(item.protocol) + " repeatTransmit: " + String(item.repeatTransmit));
 
     int queueCount = queue.count();
-    client.publish(queueLengthTopic, String(queueCount));
+    mqttClient.publish(queueLengthTopic.c_str(), String(queueCount).c_str());
 
     if (debug)
       Serial.println("Queue count: " + String(queueCount));
   }
 
-  client.loop();
-
-  if (!client.connected()) {
-    int errorCode = client.lastError();
-    Serial.println("MQTT disconnected, error code: " + String(errorCode));
-    connectMqtt();
-  }
-
+  mqttClient.loop();
   drd->loop();
 }
