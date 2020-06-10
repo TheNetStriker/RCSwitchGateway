@@ -375,6 +375,8 @@ void setup() {
       if (autoConnectWifi()) {
         readConfig(); // Read config again in case something changed in the portal.
         checkAndConnectMqtt();
+      } else {
+        ESP.restart();
       }
     }
   }
