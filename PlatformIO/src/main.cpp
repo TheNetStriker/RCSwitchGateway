@@ -372,17 +372,7 @@ void setup() {
       mySwitch.setProtocol(2);
       mySwitch.setRepeatTransmit(5);
 
-      digitalWrite(LED_BUILTIN, HIGH);
-      ticker.attach(0.5, blink);
-
       if (autoConnectWifi()) {
-        ticker.detach();
-        digitalWrite(LED_BUILTIN, LOW);
-
-        if (MDNS.begin(hostname)) {
-          Serial.println("MDNS responder started");
-        }
-
         readConfig(); // Read config again in case something changed in the portal.
         checkAndConnectMqtt();
       }
