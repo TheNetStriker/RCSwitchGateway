@@ -10,6 +10,8 @@ This program uses a modified version of the [rc-switch library](https://github.c
 #define MQTT_BROKER_IP "MYIP"
 #define HOSTNAME "MYHOSTNAME"
 ```
+## OTA Update
+To enable OTA update just set **default_envs** to **release** and add an ota.txt file containing the ip of the device and a password on separate lines. The **ota.py** file will automatically add the required configuration for the OTA upload.
 ## Hardware
 In the **Eagle** folder you can find Eagle and Gerber files for a feather board to connect a MX-05V receiver and an FS1000A sender to the Adafruit Huzzah32.
 ## MQTT commands and events

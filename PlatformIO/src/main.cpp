@@ -10,10 +10,11 @@
 #include <Ticker.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 
 #define ESP_DRD_USE_EEPROM false
 #define ESP_DRD_USE_SPIFFS true
-#define DOUBLERESETDETECTOR_DEBUG true
 
 #include <ESP_DoubleResetDetector.h>
 
@@ -65,8 +66,6 @@ class CodeQueueItem
 
 const unsigned int maxQueueCount = 30;
 QueueList <CodeQueueItem> queue;
-
-const bool debug = true;
 
 void blink()
 {
@@ -166,7 +165,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
   Serial.println("incoming message: " + topicString);
 
   if (queue.count() > maxQueueCount) {
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("Error: Send queue is full!");
     return;
   }
@@ -212,7 +211,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("sendtypea added to queue, group: " + group + " device: " + device + " repeatTransmit: " + String(repeatTransmit) + " switch: " + switchOnOff);
   } else if (topicString == sendTopic) {
     //example request: {"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }
@@ -236,7 +235,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("send added to queue, code: " + String(code) + " codeLength: " + String(codeLength) + " protocol: " + String(protocol) + " repeatTransmit: " + String(repeatTransmit));
   }
 }
@@ -335,6 +334,41 @@ bool initSPIFFS() {
   return true;
 }
 
+void setupOTA() {
+  ArduinoOTA.setPort(8266);
+  ArduinoOTA.setHostname(hostname);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  Serial.println(OTA_PASSWORD);
+
+  ArduinoOTA
+    .onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -375,6 +409,7 @@ void setup() {
       if (autoConnectWifi()) {
         readConfig(); // Read config again in case something changed in the portal.
         checkAndConnectMqtt();
+        setupOTA();
       } else {
         ESP.restart();
       }
@@ -389,11 +424,11 @@ void loop() {
   if (mySwitch.available()) {
     unsigned long value = mySwitch.getReceivedValue();
     if (value == 0) {
-      if (debug)
+      if (RC_SWITCH_DEBUG)
         Serial.println("Unknown encoding");
     } else {
       mqttClient.publish(codeEventTopic.c_str(), String(value).c_str());
-      if (debug) {
+      if (RC_SWITCH_DEBUG) {
         Serial.print("code received ");
         Serial.println(value);
       }
@@ -404,23 +439,24 @@ void loop() {
   if (!queue.isEmpty()) {
     CodeQueueItem item = queue.pop();
 
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("sending code: " + String(item.code) + " length: " + String(item.length) + " protocol: " + String(item.protocol) + " repeatTransmit: " + String(item.repeatTransmit));
 
     mySwitch.setProtocol(item.protocol);
     mySwitch.setRepeatTransmit(item.repeatTransmit);
     mySwitch.send(item.code, item.length);
 
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("sent code: " + String(item.code) + " length: " + String(item.length) + " protocol: " + String(item.protocol) + " repeatTransmit: " + String(item.repeatTransmit));
 
     int queueCount = queue.count();
     mqttClient.publish(queueLengthTopic.c_str(), String(queueCount).c_str());
 
-    if (debug)
+    if (RC_SWITCH_DEBUG)
       Serial.println("Queue count: " + String(queueCount));
   }
 
   mqttClient.loop();
   drd->loop();
+  ArduinoOTA.handle();
 }
