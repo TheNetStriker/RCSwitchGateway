@@ -14,6 +14,6 @@ Commands are sent as json text.
 **/hostname/sender/send**: Command to send a custom signal with the following attributes:
 `{"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }`
 ### Events
-Events are just plain numbers.  
 **/hostname/queue/length**: Length of the current queue of signals to be sent.  
 **/hostname/events/codereceived**: Received code event
+**/hostname/availability**: MQTT connection status
