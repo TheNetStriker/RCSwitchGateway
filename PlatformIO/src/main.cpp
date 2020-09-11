@@ -53,6 +53,7 @@ String sendTypeATopic;
 String sendTopic;
 String queueLengthTopic;
 String codeEventTopic;
+String willTopic;
 
 class CodeQueueItem
 {
@@ -82,13 +83,15 @@ bool checkAndConnectMqtt() {
 
       mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
 
-      while (!mqttClient.connect(hostname)) {
+      while (!mqttClient.connect(hostname, willTopic.c_str(), 0, false, "Offline")) {
         int errorCode = mqttClient.state();
         Serial.println("MQTT connect error: " + String(errorCode) + " ");
 
         ticker.detach();
         return false;
       }
+
+      mqttClient.publish(willTopic.c_str(), "Online");
 
       mqttClient.subscribe(sendTypeATopic.c_str());
       mqttClient.subscribe(sendTopic.c_str());
@@ -314,6 +317,7 @@ void readConfig() {
       sendTopic = String("/") + hostname + "/sender/send";
       queueLengthTopic = String("/") + hostname + "/queue/length";
       codeEventTopic = String("/") + hostname + "/events/codereceived";
+      willTopic = String("/") + hostname + "/availability";
     }
   }
 }
