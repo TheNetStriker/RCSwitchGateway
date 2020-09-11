@@ -82,6 +82,7 @@ bool checkAndConnectMqtt() {
       Serial.println("MQTT connecting...");
 
       mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
+      mqttClient.setKeepAlive(60);
 
       while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "Offline")) {
         int errorCode = mqttClient.state();
