@@ -54,6 +54,8 @@ String sendTopic;
 String queueLengthTopic;
 String codeEventTopic;
 String willTopic;
+String rssiTopic;
+String logTopic;
 
 class CodeQueueItem
 {
@@ -68,9 +70,19 @@ class CodeQueueItem
 const unsigned int maxQueueCount = 30;
 QueueList <CodeQueueItem> queue;
 
+unsigned long rssiTimer = 0;
+const unsigned long rssiTimeout = 60000;
+
 void blink()
 {
   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+}
+
+void sendRSSI() {
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.println("WiFi RSSI: " + String(WiFi.RSSI()));
+  #endif
+  mqttClient.publish(rssiTopic.c_str(), String(WiFi.RSSI()).c_str());
 }
 
 bool checkAndConnectMqtt() {
@@ -98,6 +110,8 @@ bool checkAndConnectMqtt() {
       mqttClient.subscribe(sendTopic.c_str());
 
       Serial.println("MQTT connected!");
+
+      sendRSSI();
 
       ticker.detach();
       digitalWrite(LED_BUILTIN, LOW);
@@ -319,6 +333,8 @@ void readConfig() {
       queueLengthTopic = String("/") + hostname + "/queue/length";
       codeEventTopic = String("/") + hostname + "/events/codereceived";
       willTopic = String("/") + hostname + "/availability";
+      rssiTopic = String("/") + hostname + "/rssi";
+      logTopic = String("/") + hostname + "/log";
     }
   }
 }
@@ -415,6 +431,7 @@ void setup() {
         readConfig(); // Read config again in case something changed in the portal.
         checkAndConnectMqtt();
         setupOTA();
+        mqttClient.publish(logTopic.c_str(), "Startup");
       } else {
         ESP.restart();
       }
@@ -459,6 +476,12 @@ void loop() {
 
     if (RC_SWITCH_DEBUG)
       Serial.println("Queue count: " + String(queueCount));
+  }
+
+  if ((unsigned long)(millis() - rssiTimer) >= rssiTimeout) {
+    // Send RSSI
+    rssiTimer = millis();
+    sendRSSI();
   }
 
   mqttClient.loop();
