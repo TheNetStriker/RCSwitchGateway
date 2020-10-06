@@ -49,6 +49,9 @@ WiFiManagerParameter custom_mqtt_port(MQTT_PORT_ID, "MQTT port", mqtt_port, 6);
 int receivePin = 15;
 int transmitPin = 32;
 
+bool otaUpdateRunning = false;
+uint8_t otaProgress = 0;
+
 String sendTypeATopic;
 String sendTopic;
 String queueLengthTopic;
@@ -80,7 +83,8 @@ void blink()
 
 void sendRSSI() {
   #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
-    Serial.println("WiFi RSSI: " + String(WiFi.RSSI()));
+    Serial.print(F("WiFi RSSI: "));
+    Serial.println(WiFi.RSSI());
   #endif
   mqttClient.publish(rssiTopic.c_str(), String(WiFi.RSSI()).c_str());
 }
@@ -91,14 +95,15 @@ bool checkAndConnectMqtt() {
     ticker.attach(1, blink);
         
     if (strlen(mqtt_server) != 0) {
-      Serial.println("MQTT connecting...");
+      Serial.println(F("MQTT connecting..."));
 
       mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
       mqttClient.setKeepAlive(60);
 
       while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "Offline")) {
         int errorCode = mqttClient.state();
-        Serial.println("MQTT connect error: " + String(errorCode) + " ");
+        Serial.print(F("MQTT connect error: "));
+        Serial.println(errorCode);
 
         ticker.detach();
         return false;
@@ -109,7 +114,7 @@ bool checkAndConnectMqtt() {
       mqttClient.subscribe(sendTypeATopic.c_str());
       mqttClient.subscribe(sendTopic.c_str());
 
-      Serial.println("MQTT connected!");
+      Serial.println(F("MQTT connected!"));
 
       sendRSSI();
 
@@ -125,12 +130,18 @@ bool autoConnectWifi() {
   digitalWrite(LED_BUILTIN, LOW);
   ticker.attach(0.5, blink);
 
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // Workarround for hostname problem https://github.com/espressif/arduino-esp32/issues/806
+  wifiManager.setHostname(hostname);
   bool success = wifiManager.autoConnect(hostname);
 
   if (success) {
-      if (MDNS.begin(hostname)) {
-        Serial.println("MDNS responder started: " + String(hostname));
-      }
+    // Disable default access point
+    WiFi.mode(WIFI_STA);
+
+    if (MDNS.begin(hostname)) {
+      Serial.print(F("MDNS responder started: "));
+      Serial.println(hostname);
+    }
   }
 
   ticker.detach();
@@ -144,32 +155,38 @@ void checkAndConnectWifi() {
     digitalWrite(LED_BUILTIN, LOW);
     ticker.attach(0.5, blink);
     
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // Workarround for hostname problem https://github.com/espressif/arduino-esp32/issues/806
+    WiFi.mode(WIFI_STA); // Disable default access point
+    WiFi.setHostname(hostname);
     WiFi.begin();
-    Serial.print("Connecting to ");
+
+    Serial.print(F("Connecting to "));
     Serial.print(wifiManager.getWiFiSSID());
-    Serial.println(" ...");
+    Serial.println(F(" ..."));
 
     int i = 0;
     while (WiFi.status() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
       delay(1000);
-      Serial.print(++i); Serial.print(' ');
+      Serial.print(++i);
+      Serial.print(F(" "));
 
       if (WiFi.status() == WL_CONNECT_FAILED) {
-        Serial.println("");
-        Serial.println("Connect failed");
+        Serial.println();
+        Serial.println(F("Connect failed"));
         delay(5000);
         WiFi.begin();
-        Serial.print(".");
+        Serial.print(F("."));
       }
     }
 
-    Serial.println('\n');
-    Serial.println("Connection established!");  
-    Serial.print("IP address:\t");
+    Serial.println(F("\n"));
+    Serial.println(F("Connection established!"));  
+    Serial.print(F("IP address:\t"));
     Serial.println(WiFi.localIP());
 
     if (MDNS.begin(hostname)) {
-      Serial.println("MDNS responder started: " + String(hostname));
+      Serial.print(F("MDNS responder started: "));
+      Serial.println(hostname);
     }
 
     ticker.detach();
@@ -180,11 +197,12 @@ void checkAndConnectWifi() {
 void messageReceived(char* topic, byte* payload, unsigned int length) {
   String topicString = topic;
 
-  Serial.println("incoming message: " + topicString);
+  Serial.print(F("incoming message: "));
+  Serial.println(topicString);
 
   if (queue.count() > maxQueueCount) {
     if (RC_SWITCH_DEBUG)
-      Serial.println("Error: Send queue is full!");
+      Serial.println(F("Error: Send queue is full!"));
     return;
   }
 
@@ -192,9 +210,9 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
   DeserializationError error = deserializeJson(doc, payload, length);
   JsonObject json = doc.as<JsonObject>();
 
-  Serial.print("json: ");
+  Serial.print(F("json: "));
   serializeJson(doc, Serial);
-  Serial.println("");
+  Serial.println();
   
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
@@ -206,7 +224,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
     //example request: {"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}
 
     if (!json.containsKey("group") || !json.containsKey("device") || !json.containsKey("repeatTransmit") || !json.containsKey("repeatTransmit")) {
-      Serial.println("Values missing!");
+      Serial.println(F("Values missing!"));
       return;
     }
     
@@ -229,13 +247,21 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (RC_SWITCH_DEBUG)
-      Serial.println("sendtypea added to queue, group: " + group + " device: " + device + " repeatTransmit: " + String(repeatTransmit) + " switch: " + switchOnOff);
+    if (RC_SWITCH_DEBUG) {
+      Serial.print(F("sendtypea added to queue, group: "));
+      Serial.print(group);
+      Serial.print(F(" device: "));
+      Serial.print(device);
+      Serial.print(F(" repeatTransmit: "));
+      Serial.print(repeatTransmit);
+      Serial.print(F(" switch: "));
+      Serial.println(switchOnOff);
+    }
   } else if (topicString == sendTopic) {
     //example request: {"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }
 
     if (!json.containsKey("code") || !json.containsKey("codeLength") || !json.containsKey("protocol") || !json.containsKey("repeatTransmit")) {
-      Serial.println("Values missing!");
+      Serial.println(F("Values missing!"));
       return;
     }
     
@@ -253,20 +279,28 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (RC_SWITCH_DEBUG)
-      Serial.println("send added to queue, code: " + String(code) + " codeLength: " + String(codeLength) + " protocol: " + String(protocol) + " repeatTransmit: " + String(repeatTransmit));
+    if (RC_SWITCH_DEBUG) {
+      Serial.print(F("send added to queue, code: "));
+      Serial.print(code);
+      Serial.print(F(" codeLength: "));
+      Serial.print(codeLength);
+      Serial.print(F(" protocol: "));
+      Serial.print(protocol);
+      Serial.print(F(" repeatTransmit: "));
+      Serial.println(repeatTransmit);
+    }
   }
 }
 
 void saveParamsCallback () {
-  Serial.println("saveParamsCallback");
+  Serial.println(F("saveParamsCallback"));
 
   strcpy(hostname, custom_hostname.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
 
   //save the custom parameters to FS
-  Serial.println("saving config");
+  Serial.println(F("saving config"));
 
   DynamicJsonDocument doc(1024);
 
@@ -276,7 +310,7 @@ void saveParamsCallback () {
 
   File configFile = SPIFFS.open("/config.json", "w");
   if (!configFile) {
-    Serial.println("failed to open config file for writing");
+    Serial.println(F("failed to open config file for writing"));
     return;
   }
 
@@ -289,10 +323,10 @@ void saveParamsCallback () {
 void readConfig() {
   if (SPIFFS.exists("/config.json")) {
     //file exists, reading and loading
-    Serial.println("reading config file");
+    Serial.println(F("reading config file"));
     File configFile = SPIFFS.open("/config.json", "r");
     if (configFile) {
-      Serial.println("opened config file");
+      Serial.println(F("opened config file"));
       size_t size = configFile.size();
       // Allocate a buffer to store contents of the file.
       std::unique_ptr<char[]> buf(new char[size]);
@@ -309,7 +343,7 @@ void readConfig() {
       
       serializeJson(doc, Serial);
 
-      Serial.println("\nparsed json");
+      Serial.println(F("\nparsed json"));
 
       if (doc.containsKey(HOSTNAME_ID) && doc[HOSTNAME_ID] != "") {
         strcpy(hostname, doc[HOSTNAME_ID]);
@@ -340,10 +374,10 @@ void readConfig() {
 }
 
 bool initSPIFFS() {
-  Serial.println("mounting FS...");
+  Serial.println(F("mounting FS..."));
 
   if (!SPIFFS.begin()) {
-    Serial.println("Formatting FS...");
+    Serial.println(F("Formatting FS..."));
     SPIFFS.format();
 
     if (!SPIFFS.begin()) {
@@ -351,7 +385,7 @@ bool initSPIFFS() {
     }
   }
 
-  Serial.println("mounted file system");
+  Serial.println(F("mounted file system"));
   return true;
 }
 
@@ -359,10 +393,14 @@ void setupOTA() {
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(hostname);
   ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.setMdnsEnabled(false);
   Serial.println(OTA_PASSWORD);
 
   ArduinoOTA
     .onStart([]() {
+      otaUpdateRunning = true;
+      otaProgress = 0;
+
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH)
         type = "sketch";
@@ -370,21 +408,30 @@ void setupOTA() {
         type = "filesystem";
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
+      Serial.print(F("Start updating "));
+      Serial.println(type);
     })
     .onEnd([]() {
-      Serial.println("\nEnd");
+      otaUpdateRunning = false;
+      Serial.println(F("\nEnd"));
     })
     .onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      uint8_t currentProgress = (progress / (total / 100));
+        if (currentProgress > otaProgress) {
+          Serial.print(F("Progress: "));
+          Serial.println(currentProgress);
+          otaProgress = currentProgress;
+        }
     })
     .onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      otaUpdateRunning = false;
+      Serial.print(F("Error: "));
+      Serial.println(error);
+      if (error == OTA_AUTH_ERROR) Serial.println(F(" Auth Failed"));
+      else if (error == OTA_BEGIN_ERROR) Serial.println(F(" Begin Failed"));
+      else if (error == OTA_CONNECT_ERROR) Serial.println(F(" Connect Failed"));
+      else if (error == OTA_RECEIVE_ERROR) Serial.println(F(" Receive Failed"));
+      else if (error == OTA_END_ERROR) Serial.println(F(" End Failed"));
     });
 
   ArduinoOTA.begin();
@@ -411,7 +458,7 @@ void setup() {
     wifiManager.setSaveParamsCallback(saveParamsCallback);
 
     if (drd->detectDoubleReset()) {
-      Serial.println("Double Reset Detected");
+      Serial.println(F("Double Reset Detected"));
 
       digitalWrite(LED_BUILTIN, HIGH);
       ticker.attach(0.5, blink);
@@ -440,51 +487,69 @@ void setup() {
 }
 
 void loop() {
-  checkAndConnectWifi();
-  checkAndConnectMqtt();
+  if (!otaUpdateRunning) checkAndConnectWifi();
+  if (!otaUpdateRunning) checkAndConnectMqtt();
 
-  if (mySwitch.available()) {
+  if (!otaUpdateRunning && mySwitch.available()) {
     unsigned long value = mySwitch.getReceivedValue();
     if (value == 0) {
       if (RC_SWITCH_DEBUG)
-        Serial.println("Unknown encoding");
+        Serial.println(F("Unknown encoding"));
     } else {
       mqttClient.publish(codeEventTopic.c_str(), String(value).c_str());
       if (RC_SWITCH_DEBUG) {
-        Serial.print("code received ");
+        Serial.print(F("code received "));
         Serial.println(value);
       }
     }
     mySwitch.resetAvailable();
   }
 
-  if (!queue.isEmpty()) {
+  if (!otaUpdateRunning && !queue.isEmpty()) {
     CodeQueueItem item = queue.pop();
 
-    if (RC_SWITCH_DEBUG)
-      Serial.println("sending code: " + String(item.code) + " length: " + String(item.length) + " protocol: " + String(item.protocol) + " repeatTransmit: " + String(item.repeatTransmit));
+    if (RC_SWITCH_DEBUG) {
+      Serial.print(F("sending code: "));
+      Serial.print(item.code);
+      Serial.print(F(" length: "));
+      Serial.print(item.length);
+      Serial.print(F(" protocol: "));
+      Serial.print(item.protocol);
+      Serial.print(F(" repeatTransmit: "));
+      Serial.println(item.repeatTransmit);
+    }
 
     mySwitch.setProtocol(item.protocol);
     mySwitch.setRepeatTransmit(item.repeatTransmit);
     mySwitch.send(item.code, item.length);
 
-    if (RC_SWITCH_DEBUG)
-      Serial.println("sent code: " + String(item.code) + " length: " + String(item.length) + " protocol: " + String(item.protocol) + " repeatTransmit: " + String(item.repeatTransmit));
+    if (RC_SWITCH_DEBUG) {
+      Serial.print(F("sent code: "));
+      Serial.print(item.code);
+      Serial.print(F(" length: "));
+      Serial.print(item.length);
+      Serial.print(F(" protocol: "));
+      Serial.print(item.protocol);
+      Serial.print(F(" repeatTransmit: "));
+      Serial.println(item.repeatTransmit);
+    }
 
     int queueCount = queue.count();
     mqttClient.publish(queueLengthTopic.c_str(), String(queueCount).c_str());
 
-    if (RC_SWITCH_DEBUG)
-      Serial.println("Queue count: " + String(queueCount));
+    if (RC_SWITCH_DEBUG) {
+      Serial.print(F("Queue count: "));
+      Serial.println(queueCount);
+    }
   }
 
-  if ((unsigned long)(millis() - rssiTimer) >= rssiTimeout) {
+  if (!otaUpdateRunning && (unsigned long)(millis() - rssiTimer) >= rssiTimeout) {
     // Send RSSI
     rssiTimer = millis();
     sendRSSI();
   }
 
-  mqttClient.loop();
-  drd->loop();
+  if (!otaUpdateRunning) mqttClient.loop();
+  if (!otaUpdateRunning) drd->loop();
   ArduinoOTA.handle();
 }
