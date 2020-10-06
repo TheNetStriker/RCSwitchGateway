@@ -95,15 +95,19 @@ bool checkAndConnectMqtt() {
     ticker.attach(1, blink);
         
     if (strlen(mqtt_server) != 0) {
-      Serial.println(F("MQTT connecting..."));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("MQTT connecting..."));
+      #endif
 
       mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
       mqttClient.setKeepAlive(60);
 
       while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "Offline")) {
         int errorCode = mqttClient.state();
-        Serial.print(F("MQTT connect error: "));
-        Serial.println(errorCode);
+        #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+          Serial.print(F("MQTT connect error: "));
+          Serial.println(errorCode);
+        #endif
 
         ticker.detach();
         return false;
@@ -114,7 +118,9 @@ bool checkAndConnectMqtt() {
       mqttClient.subscribe(sendTypeATopic.c_str());
       mqttClient.subscribe(sendTopic.c_str());
 
-      Serial.println(F("MQTT connected!"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("MQTT connected!"));
+      #endif
 
       sendRSSI();
 
@@ -139,8 +145,10 @@ bool autoConnectWifi() {
     WiFi.mode(WIFI_STA);
 
     if (MDNS.begin(hostname)) {
-      Serial.print(F("MDNS responder started: "));
-      Serial.println(hostname);
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.print(F("MDNS responder started: "));
+        Serial.println(hostname);
+      #endif
     }
   }
 
@@ -160,33 +168,45 @@ void checkAndConnectWifi() {
     WiFi.setHostname(hostname);
     WiFi.begin();
 
-    Serial.print(F("Connecting to "));
-    Serial.print(wifiManager.getWiFiSSID());
-    Serial.println(F(" ..."));
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.print(F("Connecting to "));
+      Serial.print(wifiManager.getWiFiSSID());
+      Serial.println(F(" ..."));
+    #endif
 
     int i = 0;
     while (WiFi.status() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
       delay(1000);
-      Serial.print(++i);
-      Serial.print(F(" "));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.print(++i);
+        Serial.print(F(" "));
+      #endif
 
       if (WiFi.status() == WL_CONNECT_FAILED) {
-        Serial.println();
-        Serial.println(F("Connect failed"));
+        #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+          Serial.println();
+          Serial.println(F("Connect failed"));
+        #endif
         delay(5000);
         WiFi.begin();
-        Serial.print(F("."));
+        #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+          Serial.print(F("."));
+        #endif
       }
     }
 
-    Serial.println(F("\n"));
-    Serial.println(F("Connection established!"));  
-    Serial.print(F("IP address:\t"));
-    Serial.println(WiFi.localIP());
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.println(F("\n"));
+      Serial.println(F("Connection established!"));  
+      Serial.print(F("IP address:\t"));
+      Serial.println(WiFi.localIP());
+    #endif
 
     if (MDNS.begin(hostname)) {
-      Serial.print(F("MDNS responder started: "));
-      Serial.println(hostname);
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.print(F("MDNS responder started: "));
+        Serial.println(hostname);
+      #endif
     }
 
     ticker.detach();
@@ -197,12 +217,15 @@ void checkAndConnectWifi() {
 void messageReceived(char* topic, byte* payload, unsigned int length) {
   String topicString = topic;
 
-  Serial.print(F("incoming message: "));
-  Serial.println(topicString);
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.print(F("incoming message: "));
+    Serial.println(topicString);
+  #endif
 
   if (queue.count() > maxQueueCount) {
-    if (RC_SWITCH_DEBUG)
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.println(F("Error: Send queue is full!"));
+    #endif
     return;
   }
 
@@ -210,13 +233,17 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
   DeserializationError error = deserializeJson(doc, payload, length);
   JsonObject json = doc.as<JsonObject>();
 
-  Serial.print(F("json: "));
-  serializeJson(doc, Serial);
-  Serial.println();
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.print(F("json: "));
+    serializeJson(doc, Serial);
+    Serial.println();
+  #endif
   
   if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.c_str());
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.c_str());
+    #endif
     return;
   }
 
@@ -224,7 +251,9 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
     //example request: {"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}
 
     if (!json.containsKey("group") || !json.containsKey("device") || !json.containsKey("repeatTransmit") || !json.containsKey("repeatTransmit")) {
-      Serial.println(F("Values missing!"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("Values missing!"));
+      #endif
       return;
     }
     
@@ -247,7 +276,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (RC_SWITCH_DEBUG) {
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("sendtypea added to queue, group: "));
       Serial.print(group);
       Serial.print(F(" device: "));
@@ -256,12 +285,14 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
       Serial.print(repeatTransmit);
       Serial.print(F(" switch: "));
       Serial.println(switchOnOff);
-    }
+    #endif
   } else if (topicString == sendTopic) {
     //example request: {"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }
 
     if (!json.containsKey("code") || !json.containsKey("codeLength") || !json.containsKey("protocol") || !json.containsKey("repeatTransmit")) {
-      Serial.println(F("Values missing!"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("Values missing!"));
+      #endif
       return;
     }
     
@@ -279,7 +310,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
-    if (RC_SWITCH_DEBUG) {
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("send added to queue, code: "));
       Serial.print(code);
       Serial.print(F(" codeLength: "));
@@ -288,19 +319,23 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
       Serial.print(protocol);
       Serial.print(F(" repeatTransmit: "));
       Serial.println(repeatTransmit);
-    }
+    #endif
   }
 }
 
 void saveParamsCallback () {
-  Serial.println(F("saveParamsCallback"));
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.println(F("saveParamsCallback"));
+  #endif
 
   strcpy(hostname, custom_hostname.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
 
   //save the custom parameters to FS
-  Serial.println(F("saving config"));
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.println(F("saving config"));
+  #endif
 
   DynamicJsonDocument doc(1024);
 
@@ -310,7 +345,9 @@ void saveParamsCallback () {
 
   File configFile = SPIFFS.open("/config.json", "w");
   if (!configFile) {
-    Serial.println(F("failed to open config file for writing"));
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.println(F("failed to open config file for writing"));
+    #endif
     return;
   }
 
@@ -323,10 +360,14 @@ void saveParamsCallback () {
 void readConfig() {
   if (SPIFFS.exists("/config.json")) {
     //file exists, reading and loading
-    Serial.println(F("reading config file"));
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.println(F("reading config file"));
+    #endif
     File configFile = SPIFFS.open("/config.json", "r");
     if (configFile) {
-      Serial.println(F("opened config file"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("opened config file"));
+      #endif
       size_t size = configFile.size();
       // Allocate a buffer to store contents of the file.
       std::unique_ptr<char[]> buf(new char[size]);
@@ -336,14 +377,18 @@ void readConfig() {
       auto error = deserializeJson(doc, buf.get());
 
       if (error) {
+        #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
           Serial.print(F("deserializeJson() failed with code "));
           Serial.println(error.c_str());
-          return;
+        #endif
+        return;
       }
       
       serializeJson(doc, Serial);
 
-      Serial.println(F("\nparsed json"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("\nparsed json"));
+      #endif
 
       if (doc.containsKey(HOSTNAME_ID) && doc[HOSTNAME_ID] != "") {
         strcpy(hostname, doc[HOSTNAME_ID]);
@@ -374,10 +419,14 @@ void readConfig() {
 }
 
 bool initSPIFFS() {
-  Serial.println(F("mounting FS..."));
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.println(F("mounting FS..."));
+  #endif
 
   if (!SPIFFS.begin()) {
-    Serial.println(F("Formatting FS..."));
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      Serial.println(F("Formatting FS..."));
+    #endif
     SPIFFS.format();
 
     if (!SPIFFS.begin()) {
@@ -385,7 +434,9 @@ bool initSPIFFS() {
     }
   }
 
-  Serial.println(F("mounted file system"));
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    Serial.println(F("mounted file system"));
+  #endif
   return true;
 }
 
@@ -408,37 +459,49 @@ void setupOTA() {
         type = "filesystem";
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.print(F("Start updating "));
-      Serial.println(type);
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.print(F("Start updating "));
+        Serial.println(type);
+      #endif
     })
     .onEnd([]() {
       otaUpdateRunning = false;
-      Serial.println(F("\nEnd"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("\nEnd"));
+      #endif
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       uint8_t currentProgress = (progress / (total / 100));
         if (currentProgress > otaProgress) {
-          Serial.print(F("Progress: "));
-          Serial.println(currentProgress);
+          #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+            Serial.print(F("Progress: "));
+            Serial.println(currentProgress);
+          #endif
           otaProgress = currentProgress;
         }
     })
     .onError([](ota_error_t error) {
       otaUpdateRunning = false;
-      Serial.print(F("Error: "));
-      Serial.println(error);
-      if (error == OTA_AUTH_ERROR) Serial.println(F(" Auth Failed"));
-      else if (error == OTA_BEGIN_ERROR) Serial.println(F(" Begin Failed"));
-      else if (error == OTA_CONNECT_ERROR) Serial.println(F(" Connect Failed"));
-      else if (error == OTA_RECEIVE_ERROR) Serial.println(F(" Receive Failed"));
-      else if (error == OTA_END_ERROR) Serial.println(F(" End Failed"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.print(F("Error: "));
+        Serial.println(error);
+        if (error == OTA_AUTH_ERROR) Serial.println(F(" Auth Failed"));
+        else if (error == OTA_BEGIN_ERROR) Serial.println(F(" Begin Failed"));
+        else if (error == OTA_CONNECT_ERROR) Serial.println(F(" Connect Failed"));
+        else if (error == OTA_RECEIVE_ERROR) Serial.println(F(" Receive Failed"));
+        else if (error == OTA_END_ERROR) Serial.println(F(" End Failed"));
+      #endif
     });
 
   ArduinoOTA.begin();
 }
 
 void setup() {
-  Serial.begin(115200);
+  #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    mySerial.begin(115200);
+  #else
+    wifiManager.setDebugOutput(false);
+  #endif
 
   delay(1000);
 
@@ -458,7 +521,9 @@ void setup() {
     wifiManager.setSaveParamsCallback(saveParamsCallback);
 
     if (drd->detectDoubleReset()) {
-      Serial.println(F("Double Reset Detected"));
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+        Serial.println(F("Double Reset Detected"));
+      #endif
 
       digitalWrite(LED_BUILTIN, HIGH);
       ticker.attach(0.5, blink);
@@ -493,14 +558,15 @@ void loop() {
   if (!otaUpdateRunning && mySwitch.available()) {
     unsigned long value = mySwitch.getReceivedValue();
     if (value == 0) {
-      if (RC_SWITCH_DEBUG)
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.println(F("Unknown encoding"));
+      #endif
     } else {
       mqttClient.publish(codeEventTopic.c_str(), String(value).c_str());
-      if (RC_SWITCH_DEBUG) {
+      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.print(F("code received "));
         Serial.println(value);
-      }
+      #endif
     }
     mySwitch.resetAvailable();
   }
@@ -508,7 +574,7 @@ void loop() {
   if (!otaUpdateRunning && !queue.isEmpty()) {
     CodeQueueItem item = queue.pop();
 
-    if (RC_SWITCH_DEBUG) {
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("sending code: "));
       Serial.print(item.code);
       Serial.print(F(" length: "));
@@ -517,13 +583,13 @@ void loop() {
       Serial.print(item.protocol);
       Serial.print(F(" repeatTransmit: "));
       Serial.println(item.repeatTransmit);
-    }
+    #endif
 
     mySwitch.setProtocol(item.protocol);
     mySwitch.setRepeatTransmit(item.repeatTransmit);
     mySwitch.send(item.code, item.length);
 
-    if (RC_SWITCH_DEBUG) {
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("sent code: "));
       Serial.print(item.code);
       Serial.print(F(" length: "));
@@ -532,15 +598,15 @@ void loop() {
       Serial.print(item.protocol);
       Serial.print(F(" repeatTransmit: "));
       Serial.println(item.repeatTransmit);
-    }
+    #endif
 
     int queueCount = queue.count();
     mqttClient.publish(queueLengthTopic.c_str(), String(queueCount).c_str());
 
-    if (RC_SWITCH_DEBUG) {
+    #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("Queue count: "));
       Serial.println(queueCount);
-    }
+    #endif
   }
 
   if (!otaUpdateRunning && (unsigned long)(millis() - rssiTimer) >= rssiTimeout) {
