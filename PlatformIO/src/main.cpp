@@ -498,7 +498,7 @@ void setupOTA() {
 
 void setup() {
   #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
-    mySerial.begin(115200);
+    Serial.begin(115200);
   #else
     wifiManager.setDebugOutput(false);
   #endif
