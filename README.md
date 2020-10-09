@@ -15,13 +15,18 @@ To enable OTA update just set **default_envs** to **release** and add an ota.txt
 ## Hardware
 In the **Eagle** folder you can find Eagle and Gerber files for a feather board to connect a MX-05V receiver and an FS1000A sender to the Adafruit Huzzah32.
 ## MQTT commands and events
-### Commands
+The MQTT messages follow the [Homie standard](https://homieiot.github.io/) and the device will be automatically autodetected on controllers that support this standard.
+### Sender
 Commands are sent as json text.  
-**/hostname/sender/sendtypea**: Command to send a type A RC Signal with the following settings:
+**homie/hostname/sender/send_type_a**: Command to send a type A RC Signal with the following settings:
 `{"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}`
-**/hostname/sender/send**: Command to send a custom signal with the following attributes:
+**homie/hostname/sender/send**: Command to send a custom signal with the following attributes:
 `{"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }`
-### Events
-Events are just plain numbers.  
-**/hostname/queue/length**: Length of the current queue of signals to be sent.  
-**/hostname/events/codereceived**: Received code event
+### Receiver
+The receiver is just sending plain numbers.  
+**homie/hostname/receiver/queue_length**: Length of the current queue of signals to be sent.  
+**homie/rcswitch01/receiver/code_received**: Received code event
+### System
+The device also sends some system values.
+**homie/rcswitch01/system/rssi**: The device send's the wifi signal strength every minute to this topic. 
+**homie/rcswitch01/system/log**: At the moment this just send's an "Startup" message when the device started. This helps to find out if the device crashed at some point.

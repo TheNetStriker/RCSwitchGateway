@@ -35,6 +35,7 @@ WiFiManager wifiManager;
 Ticker ticker;
 
 char hostname[40] = "rcswitch01";
+char hostnameLowerCase[40];
 char mqtt_server[40];
 char mqtt_port[6] = "1883";
 
@@ -52,13 +53,22 @@ int transmitPin = 32;
 bool otaUpdateRunning = false;
 uint8_t otaProgress = 0;
 
-String sendTypeATopic;
-String sendTopic;
-String queueLengthTopic;
-String codeEventTopic;
+// MQTT Topics
+String deviceTopic;
 String willTopic;
-String rssiTopic;
-String logTopic;
+
+String systemNodeTopic;
+String senderNodeTopic;
+String receiverNodeTopic;
+
+String rssiPropertyTopic;
+String logPropertyTopic;
+String sendTypeAPropertyTopic;
+String sendTypeASetPropertyTopic;
+String sendPropertyTopic;
+String sendSetPropertyTopic;
+String queueLengthPropertyTopic;
+String codeReceivedPropertyTopic;
 
 class CodeQueueItem
 {
@@ -76,6 +86,14 @@ QueueList <CodeQueueItem> queue;
 unsigned long rssiTimer = 0;
 const unsigned long rssiTimeout = 60000;
 
+void toLower(char* output, const char* input) {
+  strcpy(output, input);
+
+  for (char *iter = output; *iter != '\0'; ++iter) {
+    *iter = std::tolower(*iter);
+  }
+}
+
 void blink()
 {
   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
@@ -86,7 +104,7 @@ void sendRSSI() {
     Serial.print(F("WiFi RSSI: "));
     Serial.println(WiFi.RSSI());
   #endif
-  mqttClient.publish(rssiTopic.c_str(), String(WiFi.RSSI()).c_str());
+  mqttClient.publish(rssiPropertyTopic.c_str(), String(WiFi.RSSI()).c_str(), true);
 }
 
 bool checkAndConnectMqtt() {
@@ -102,7 +120,7 @@ bool checkAndConnectMqtt() {
       mqttClient.setServer(mqtt_server, String(mqtt_port).toInt());
       mqttClient.setKeepAlive(60);
 
-      while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "Offline")) {
+      while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "lost")) {
         int errorCode = mqttClient.state();
         #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
           Serial.print(F("MQTT connect error: "));
@@ -113,10 +131,8 @@ bool checkAndConnectMqtt() {
         return false;
       }
 
-      mqttClient.publish(willTopic.c_str(), "Online", true);
-
-      mqttClient.subscribe(sendTypeATopic.c_str());
-      mqttClient.subscribe(sendTopic.c_str());
+      mqttClient.subscribe(sendTypeASetPropertyTopic.c_str());
+      mqttClient.subscribe(sendSetPropertyTopic.c_str());
 
       #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.println(F("MQTT connected!"));
@@ -214,7 +230,7 @@ void checkAndConnectWifi() {
   }
 }
 
-void messageReceived(char* topic, byte* payload, unsigned int length) {
+void messageReceived(char* topic, const byte* payload, unsigned int length) {
   String topicString = topic;
 
   #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
@@ -229,7 +245,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  DynamicJsonDocument doc(1024);
+  StaticJsonDocument<255> doc;
   DeserializationError error = deserializeJson(doc, payload, length);
   JsonObject json = doc.as<JsonObject>();
 
@@ -247,7 +263,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (topicString == sendTypeATopic) {
+  if (topicString == sendTypeASetPropertyTopic) {
     //example request: {"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}
 
     if (!json.containsKey("group") || !json.containsKey("device") || !json.containsKey("repeatTransmit") || !json.containsKey("repeatTransmit")) {
@@ -276,6 +292,9 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
     queue.push(*item);
 
+    // Send message to main topic to confirm message received
+    mqttClient.publish(sendTypeAPropertyTopic.c_str(), payload, length, true);
+
     #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("sendtypea added to queue, group: "));
       Serial.print(group);
@@ -286,7 +305,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
       Serial.print(F(" switch: "));
       Serial.println(switchOnOff);
     #endif
-  } else if (topicString == sendTopic) {
+  } else if (topicString == sendSetPropertyTopic) {
     //example request: {"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }
 
     if (!json.containsKey("code") || !json.containsKey("codeLength") || !json.containsKey("protocol") || !json.containsKey("repeatTransmit")) {
@@ -309,6 +328,9 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
     item->repeatTransmit = repeatTransmit;
 
     queue.push(*item);
+
+    // Send message to main topic to confirm message received
+    mqttClient.publish(sendPropertyTopic.c_str(), payload, length, true);
 
     #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("send added to queue, code: "));
@@ -407,13 +429,25 @@ void readConfig() {
 
       configFile.close();
 
-      sendTypeATopic = String("/") + hostname + String("/sender/sendtypea");
-      sendTopic = String("/") + hostname + "/sender/send";
-      queueLengthTopic = String("/") + hostname + "/queue/length";
-      codeEventTopic = String("/") + hostname + "/events/codereceived";
-      willTopic = String("/") + hostname + "/availability";
-      rssiTopic = String("/") + hostname + "/rssi";
-      logTopic = String("/") + hostname + "/log";
+      toLower(hostnameLowerCase, hostname);
+
+      deviceTopic = String("homie/") + hostnameLowerCase;
+      willTopic = deviceTopic + String("/$state");
+
+      systemNodeTopic = deviceTopic + "/system";
+      senderNodeTopic = deviceTopic + "/sender";
+      receiverNodeTopic = deviceTopic + "/receiver";
+
+      rssiPropertyTopic = systemNodeTopic + "/rssi";
+      logPropertyTopic = systemNodeTopic + "/log";
+
+      sendTypeAPropertyTopic = senderNodeTopic + "/send_type_a";
+      sendTypeASetPropertyTopic = sendTypeAPropertyTopic + "/set";
+      sendPropertyTopic = senderNodeTopic + "/send";
+      sendSetPropertyTopic = sendPropertyTopic + "/set";
+
+      queueLengthPropertyTopic = receiverNodeTopic + "/queue_length";
+      codeReceivedPropertyTopic = receiverNodeTopic + "/code_received";
     }
   }
 }
@@ -496,6 +530,48 @@ void setupOTA() {
   ArduinoOTA.begin();
 }
 
+#if defined(HOMIE_DISCOVERY) && HOMIE_DISCOVERY
+void sendHomieDiscovery() {
+  mqttClient.publish((rssiPropertyTopic + "/$name").c_str(), "Wifi RSSI", true);
+  mqttClient.publish((rssiPropertyTopic + "/$unit").c_str(), "dB", true);
+  mqttClient.publish((rssiPropertyTopic + "/$datatype").c_str(), "integer", true);
+
+  mqttClient.publish((logPropertyTopic + "/$name").c_str(), "Debug log", true);
+  mqttClient.publish((logPropertyTopic + "/$datatype").c_str(), "string", true);
+
+  mqttClient.publish((systemNodeTopic + "/$name").c_str(), "System", true);
+  mqttClient.publish((systemNodeTopic + "/$properties").c_str(), "rssi,log", true);
+
+  mqttClient.publish((sendTypeAPropertyTopic + "/$name").c_str(), "Send type a signal", true);
+  mqttClient.publish((sendTypeAPropertyTopic + "/$datatype").c_str(), "string", true);
+  mqttClient.publish((sendTypeAPropertyTopic + "/$settable").c_str(), "true", true);
+
+  mqttClient.publish((sendPropertyTopic + "/$name").c_str(), "Send signal", true);
+  mqttClient.publish((sendPropertyTopic + "/$datatype").c_str(), "string", true);
+  mqttClient.publish((sendPropertyTopic + "/$settable").c_str(), "true", true);
+
+  mqttClient.publish((senderNodeTopic + "/$name").c_str(), "Sender", true);
+  mqttClient.publish((senderNodeTopic + "/$properties").c_str(), "send_type_a,send", true);
+
+  mqttClient.publish((queueLengthPropertyTopic + "/$name").c_str(), "Sender queue length", true);
+  mqttClient.publish((queueLengthPropertyTopic + "/$datatype").c_str(), "integer", true);
+
+  mqttClient.publish((codeReceivedPropertyTopic + "/$name").c_str(), "Code received event", true);
+  mqttClient.publish((codeReceivedPropertyTopic + "/$datatype").c_str(), "integer", true);
+  mqttClient.publish((codeReceivedPropertyTopic + "/$retained").c_str(), "false", true);
+
+  mqttClient.publish((receiverNodeTopic + "/$name").c_str(), "Receiver", true);
+  mqttClient.publish((receiverNodeTopic + "/$properties").c_str(), "queue_length,code_received", true);
+
+  mqttClient.publish((deviceTopic + "/$homie").c_str(), "4.0", true);
+  mqttClient.publish((deviceTopic + "/$name").c_str(), hostname, true);
+  mqttClient.publish((deviceTopic + "/$nodes").c_str(), "system,sender,receiver", true);
+  mqttClient.publish((deviceTopic + "/$implementation").c_str(), "ESP32", true);
+  mqttClient.publish((deviceTopic + "/$extensions").c_str(), "", true);
+  mqttClient.publish(willTopic.c_str(), "ready", true);
+}
+#endif
+
 void setup() {
   #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
     Serial.begin(115200);
@@ -543,7 +619,12 @@ void setup() {
         readConfig(); // Read config again in case something changed in the portal.
         checkAndConnectMqtt();
         setupOTA();
-        mqttClient.publish(logTopic.c_str(), "Startup");
+
+        #if defined(HOMIE_DISCOVERY) && HOMIE_DISCOVERY
+          sendHomieDiscovery();
+        #endif
+
+        mqttClient.publish(logPropertyTopic.c_str(), "Startup", true);
       } else {
         ESP.restart();
       }
@@ -562,7 +643,7 @@ void loop() {
         Serial.println(F("Unknown encoding"));
       #endif
     } else {
-      mqttClient.publish(codeEventTopic.c_str(), String(value).c_str());
+      mqttClient.publish(codeReceivedPropertyTopic.c_str(), String(value).c_str());
       #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.print(F("code received "));
         Serial.println(value);
@@ -601,7 +682,7 @@ void loop() {
     #endif
 
     int queueCount = queue.count();
-    mqttClient.publish(queueLengthTopic.c_str(), String(queueCount).c_str());
+    mqttClient.publish(queueLengthPropertyTopic.c_str(), String(queueCount).c_str(), true);
 
     #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
       Serial.print(F("Queue count: "));
