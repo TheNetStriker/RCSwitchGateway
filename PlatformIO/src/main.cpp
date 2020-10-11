@@ -538,6 +538,7 @@ void sendHomieDiscovery() {
 
   mqttClient.publish((logPropertyTopic + "/$name").c_str(), "Debug log", true);
   mqttClient.publish((logPropertyTopic + "/$datatype").c_str(), "string", true);
+  mqttClient.publish((logPropertyTopic + "/$retained").c_str(), "false", true);
 
   mqttClient.publish((systemNodeTopic + "/$name").c_str(), "System", true);
   mqttClient.publish((systemNodeTopic + "/$properties").c_str(), "rssi,log", true);
@@ -624,7 +625,7 @@ void setup() {
           sendHomieDiscovery();
         #endif
 
-        mqttClient.publish(logPropertyTopic.c_str(), "Startup", true);
+        mqttClient.publish(logPropertyTopic.c_str(), "Startup");
       } else {
         ESP.restart();
       }
