@@ -18,14 +18,14 @@ In the **Eagle** folder you can find Eagle and Gerber files for a feather board 
 The MQTT messages follow the [Homie standard](https://homieiot.github.io/) and the device will be automatically autodetected on controllers that support this standard.
 ### Sender
 Commands are sent as json text.\
-**homie/hostname/sender/send_type_a**: Command to send a type A RC Signal with the following settings:
+**homie/hostname/sender/sendtypea**: Command to send a type A RC Signal with the following settings:
 `{"group": "11111", "device": "11111", "repeatTransmit": 5, "switchOnOff": true}`\
 **homie/hostname/sender/send**: Command to send a custom signal with the following attributes:
 `{"code": 1234, "codeLength": 24, "protocol": 1, "repeatTransmit": 5 }`
 ### Receiver
 The receiver is just sending plain numbers.\
-**homie/hostname/receiver/queue_length**: Length of the current queue of signals to be sent.\
-**homie/rcswitch01/receiver/code_received**: Received code event
+**homie/hostname/receiver/queuelength**: Length of the current queue of signals to be sent.\
+**homie/rcswitch01/receiver/codereceived**: Received code event
 ### System
 The device also sends some system values.\
 **homie/rcswitch01/system/rssi**: The device send's the wifi signal strength every minute to this topic.\

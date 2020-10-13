@@ -441,13 +441,13 @@ void readConfig() {
       rssiPropertyTopic = systemNodeTopic + "/rssi";
       logPropertyTopic = systemNodeTopic + "/log";
 
-      sendTypeAPropertyTopic = senderNodeTopic + "/send_type_a";
+      sendTypeAPropertyTopic = senderNodeTopic + "/sendtypea";
       sendTypeASetPropertyTopic = sendTypeAPropertyTopic + "/set";
       sendPropertyTopic = senderNodeTopic + "/send";
       sendSetPropertyTopic = sendPropertyTopic + "/set";
 
-      queueLengthPropertyTopic = receiverNodeTopic + "/queue_length";
-      codeReceivedPropertyTopic = receiverNodeTopic + "/code_received";
+      queueLengthPropertyTopic = receiverNodeTopic + "/queuelength";
+      codeReceivedPropertyTopic = receiverNodeTopic + "/codereceived";
     }
   }
 }
@@ -535,6 +535,7 @@ void sendHomieDiscovery() {
   mqttClient.publish((rssiPropertyTopic + "/$name").c_str(), "Wifi RSSI", true);
   mqttClient.publish((rssiPropertyTopic + "/$unit").c_str(), "dB", true);
   mqttClient.publish((rssiPropertyTopic + "/$datatype").c_str(), "integer", true);
+  mqttClient.publish((rssiPropertyTopic + "/$format").c_str(), "-100:0", true);
 
   mqttClient.publish((logPropertyTopic + "/$name").c_str(), "Debug log", true);
   mqttClient.publish((logPropertyTopic + "/$datatype").c_str(), "string", true);
@@ -552,7 +553,7 @@ void sendHomieDiscovery() {
   mqttClient.publish((sendPropertyTopic + "/$settable").c_str(), "true", true);
 
   mqttClient.publish((senderNodeTopic + "/$name").c_str(), "Sender", true);
-  mqttClient.publish((senderNodeTopic + "/$properties").c_str(), "send_type_a,send", true);
+  mqttClient.publish((senderNodeTopic + "/$properties").c_str(), "sendtypea,send", true);
 
   mqttClient.publish((queueLengthPropertyTopic + "/$name").c_str(), "Sender queue length", true);
   mqttClient.publish((queueLengthPropertyTopic + "/$datatype").c_str(), "integer", true);
@@ -562,7 +563,7 @@ void sendHomieDiscovery() {
   mqttClient.publish((codeReceivedPropertyTopic + "/$retained").c_str(), "false", true);
 
   mqttClient.publish((receiverNodeTopic + "/$name").c_str(), "Receiver", true);
-  mqttClient.publish((receiverNodeTopic + "/$properties").c_str(), "queue_length,code_received", true);
+  mqttClient.publish((receiverNodeTopic + "/$properties").c_str(), "queuelength,codereceived", true);
 
   mqttClient.publish((deviceTopic + "/$homie").c_str(), "4.0", true);
   mqttClient.publish((deviceTopic + "/$name").c_str(), hostname, true);
