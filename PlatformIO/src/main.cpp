@@ -121,8 +121,8 @@ bool checkAndConnectMqtt() {
       mqttClient.setKeepAlive(60);
 
       while (!mqttClient.connect(hostname, willTopic.c_str(), 0, true, "lost")) {
-        int errorCode = mqttClient.state();
         #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+          int errorCode = mqttClient.state();
           Serial.print(F("MQTT connect error: "));
           Serial.println(errorCode);
         #endif
