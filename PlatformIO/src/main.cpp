@@ -134,6 +134,8 @@ bool checkAndConnectMqtt() {
       mqttClient.subscribe(sendTypeASetPropertyTopic.c_str());
       mqttClient.subscribe(sendSetPropertyTopic.c_str());
 
+      mqttClient.publish(willTopic.c_str(), "ready", true);
+
       #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.println(F("MQTT connected!"));
       #endif
