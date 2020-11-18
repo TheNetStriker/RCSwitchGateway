@@ -156,6 +156,7 @@ bool autoConnectWifi() {
 
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // Workarround for hostname problem https://github.com/espressif/arduino-esp32/issues/806
   wifiManager.setHostname(hostname);
+  wifiManager.setFastConnectMode(true);
   bool success = wifiManager.autoConnect(hostname);
 
   if (success) {
