@@ -63,10 +63,14 @@ String receiverNodeTopic;
 
 String rssiPropertyTopic;
 String logPropertyTopic;
+String resetPropertyTopic;
+String resetSetPropertyTopic;
+
 String sendTypeAPropertyTopic;
 String sendTypeASetPropertyTopic;
 String sendPropertyTopic;
 String sendSetPropertyTopic;
+
 String queueLengthPropertyTopic;
 String codeReceivedPropertyTopic;
 
@@ -133,8 +137,10 @@ bool checkAndConnectMqtt() {
 
       mqttClient.subscribe(sendTypeASetPropertyTopic.c_str());
       mqttClient.subscribe(sendSetPropertyTopic.c_str());
+      mqttClient.subscribe(resetSetPropertyTopic.c_str());
 
       mqttClient.publish(willTopic.c_str(), "ready", true);
+      mqttClient.publish(resetPropertyTopic.c_str(), "false", true);
 
       #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
         Serial.println(F("MQTT connected!"));
@@ -240,6 +246,18 @@ void messageReceived(char* topic, const byte* payload, unsigned int length) {
     Serial.print(F("incoming message: "));
     Serial.println(topicString);
   #endif
+
+  if (topicString == resetSetPropertyTopic) {
+    String payloadString = "";
+    for (unsigned int i=0; i<length; i++) {
+      payloadString += (char)payload[i];
+    }
+
+    if (payloadString == "true") {
+      drd->stop();
+      ESP.restart();
+    }
+  }
 
   if (queue.count() > maxQueueCount) {
     #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
@@ -443,6 +461,8 @@ void readConfig() {
 
       rssiPropertyTopic = systemNodeTopic + "/rssi";
       logPropertyTopic = systemNodeTopic + "/log";
+      resetPropertyTopic = systemNodeTopic + String("/reset");
+      resetSetPropertyTopic = resetPropertyTopic + String("/set");
 
       sendTypeAPropertyTopic = senderNodeTopic + "/sendtypea";
       sendTypeASetPropertyTopic = sendTypeAPropertyTopic + "/set";
@@ -544,8 +564,12 @@ void sendHomieDiscovery() {
   mqttClient.publish((logPropertyTopic + "/$datatype").c_str(), "string", true);
   mqttClient.publish((logPropertyTopic + "/$retained").c_str(), "false", true);
 
+  mqttClient.publish((resetPropertyTopic + "/$name").c_str(), "Reset controller", true);
+  mqttClient.publish((resetPropertyTopic + "/$datatype").c_str(), "boolean", true);
+  mqttClient.publish((resetPropertyTopic + "/$settable").c_str(), "true", true);
+
   mqttClient.publish((systemNodeTopic + "/$name").c_str(), "System", true);
-  mqttClient.publish((systemNodeTopic + "/$properties").c_str(), "rssi,log", true);
+  mqttClient.publish((systemNodeTopic + "/$properties").c_str(), "rssi,log,reset", true);
 
   mqttClient.publish((sendTypeAPropertyTopic + "/$name").c_str(), "Send type a signal", true);
   mqttClient.publish((sendTypeAPropertyTopic + "/$datatype").c_str(), "string", true);
