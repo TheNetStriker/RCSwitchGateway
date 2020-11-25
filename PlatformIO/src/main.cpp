@@ -523,6 +523,7 @@ void setupOTA() {
     .onStart([]() {
       otaUpdateRunning = true;
       otaProgress = 0;
+      drd->stop();
 
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH)
