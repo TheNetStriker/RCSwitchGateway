@@ -34,6 +34,8 @@ RCSwitch mySwitch = RCSwitch();
 WiFiManager wifiManager;
 Ticker ticker;
 
+uint8_t bssid[6];
+
 char hostname[40] = "rcswitch01";
 char hostnameLowerCase[40];
 char mqtt_server[40];
@@ -166,15 +168,22 @@ bool autoConnectWifi() {
   bool success = wifiManager.autoConnect(hostname);
 
   if (success) {
+    // Store current BSSID and channel for later reconnect
+    memcpy((void *) &bssid[0], (void *) WiFi.BSSID(), 6);
+
     // Disable default access point
     WiFi.mode(WIFI_STA);
 
-    if (MDNS.begin(hostname)) {
-      #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+    #if (defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG)
+      char mac[18] = { 0 };
+      sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+      Serial.print(F("BSSID: "));
+      Serial.println(mac);
+      if (MDNS.begin(hostname)) {
         Serial.print(F("MDNS responder started: "));
         Serial.println(hostname);
-      #endif
-    }
+      }
+    #endif
   }
 
   ticker.detach();
@@ -191,11 +200,17 @@ void checkAndConnectWifi() {
     WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // Workarround for hostname problem https://github.com/espressif/arduino-esp32/issues/806
     WiFi.mode(WIFI_STA); // Disable default access point
     WiFi.setHostname(hostname);
-    WiFi.begin();
+    WiFi.begin(wifiManager.getWiFiSSID().c_str(), wifiManager.getWiFiPass().c_str(), 0, bssid, true);
 
     #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
+      char mac[18] = { 0 };
+      sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
       Serial.print(F("Connecting to "));
       Serial.print(wifiManager.getWiFiSSID());
+      Serial.print(F(" Using password: "));
+      Serial.print(wifiManager.getWiFiPass());
+      Serial.print(F(" BSSID: "));
+      Serial.print(mac);
       Serial.println(F(" ..."));
     #endif
 
@@ -213,7 +228,7 @@ void checkAndConnectWifi() {
           Serial.println(F("Connect failed"));
         #endif
         delay(5000);
-        WiFi.begin();
+        WiFi.begin(wifiManager.getWiFiSSID().c_str(), wifiManager.getWiFiPass().c_str(), 0, bssid, true);
         #if defined(RC_SWITCH_DEBUG) && RC_SWITCH_DEBUG
           Serial.print(F("."));
         #endif
