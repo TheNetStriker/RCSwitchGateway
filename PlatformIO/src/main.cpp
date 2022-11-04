@@ -649,6 +649,8 @@ void setup() {
       digitalWrite(LED_BUILTIN, HIGH);
       ticker.attach(0.5, blink);
 
+      // Start config portal only for 5 minutes.
+      wifiManager.setConfigPortalTimeout(300);
       wifiManager.startConfigPortal(hostname);
 
       ticker.detach();
